@@ -5,9 +5,11 @@ import struct
 import time
 import select
 import binascii
+import statistics
 # Should use stdev
 
 ICMP_ECHO_REQUEST = 8
+ICMP_ECHO_REPLY = 0
 
 
 def checksum(string):
@@ -42,7 +44,7 @@ def receiveOnePing(mySocket, ID, timeout, destAddr):
         whatReady = select.select([mySocket], [], [], timeLeft)
         howLongInSelect = (time.time() - startedSelect)
         if whatReady[0] == []:  # Timeout
-            return "Request timed out."
+            return -1
 
         timeReceived = time.time()
         recPacket, addr = mySocket.recvfrom(1024)
@@ -50,11 +52,34 @@ def receiveOnePing(mySocket, ID, timeout, destAddr):
         # Fill in start
 
         # Fetch the ICMP header from the IP packet
+        ip_header = recPacket[0: 20]
+        icmp_header = recPacket[20:28]
+        version_header_length, type_of_service, datagram_length, identifier, flags_and_offset, ttl, upper_protocol, header_checksum, source_ip, dest_ip = struct.unpack("bbhhhbbhii", ip_header)
+        type, code, checksum, p_id, sequence = struct.unpack("bbHHh", icmp_header)
+        # print("received header version and length: " + str(version_header_length))
+        # print("received header type of service: " + str(type_of_service))
+        # print("received header datagram length: " + str(datagram_length))
+        # print("received header identifier: " + str(identifier))
+        # print("received header flag and offset: " + str(flags_and_offset))
+        # print("received header TTL: " + str(ttl))
+        # print("received header upper protocol: " + str(upper_protocol))
+        # print("received header checksum: " + str(header_checksum))
+        # print("received header source IP: " + str(source_ip))
+        # print("received header dest IP: " + str(dest_ip))
+        # print("received header type: " + str(type))
+        # print("received header code: " + str(code))
+        # print("received header checksum: " + str(checksum)) 
+        # print("received header p_id: " + str(p_id))
+        # print("received header sequence: " + str(sequence))
+        if p_id == ID and type == ICMP_ECHO_REPLY and code == ICMP_ECHO_REPLY:
+            delay = howLongInSelect * 1000
+            print("Reply from " + destAddr + ": bytes=" + str(datagram_length) + " time=" + str(delay) + "ms TTL=" + str(ttl))
+            return delay
 
         # Fill in end
         timeLeft = timeLeft - howLongInSelect
         if timeLeft <= 0:
-            return "Request timed out."
+            return -1
 
 
 def sendOnePing(mySocket, destAddr, ID):
@@ -109,16 +134,32 @@ def ping(host, timeout=1):
     
     #Send ping requests to a server separated by approximately one second
     #Add something here to collect the delays of each ping in a list so you can calculate vars after your ping
-    
+    delays = []
+    packet_received = 0
     for i in range(0,4): #Four pings will be sent (loop runs for i=0, 1, 2, 3)
         delay = doOnePing(dest, timeout)
-        print(delay)
+        # print(delay)
+        if delay < 0:
+            print("Request timed out.")
+            delays.insert(i, 0.0)
+        else:
+            delays.insert(i, delay)
+            packet_received = packet_received + 1
         time.sleep(1)  # one second
         
     #You should have the values of delay for each ping here; fill in calculation for packet_min, packet_avg, packet_max, and stdev
-    #vars = [str(round(packet_min, 8)), str(round(packet_avg, 8)), str(round(packet_max, 8)),str(round(stdev(stdev_var), 8))]
+    packet_min = min(delays)
+    packet_max = max(delays)
+    packet_avg = sum(delays)/len(delays)
+    stdev_var = statistics.stdev(delays)
+    vars = [str(round(packet_min, 8)), str(round(packet_avg, 8)), str(round(packet_max, 8)),str(round(stdev_var, 8))]
+    print("--- " + host + " ping statistics ---")
+    print("4 packets transmitted, " + str(packet_received) + " packets received, " + str(100 * (1 - packet_received/4)) + "% packet loss")
+    print("round-trip min/avg/max/stdev = " + "/".join(vars) + " ms")
 
     return vars
 
 if __name__ == '__main__':
     ping("google.co.il")
+    ping("127.0.0.2")
+    # ping("No.no.e")
